@@ -9,7 +9,7 @@ module.exports = function (name, version) {
 	}
 
 	return got(registryUrl + name.toLowerCase())
-		.then(function (data) {
+		.then(async function (data) {
 			var versionName = '';
 			var versionDate = '';
 			var versionToCheck = '';
@@ -17,13 +17,12 @@ module.exports = function (name, version) {
 			var latestDate = '';
 			var description = '';
 			var license = '';
+			var licenseURL = '';
 			var homepage = '';
 			var authorName = '';
 
 			var dataParsed = JSON.parse(data.body);
-
 			latestVersion = dataParsed['dist-tags'].latest;
-
 			versionToCheck = version || latestVersion;
 
 			if (dataParsed.versions[versionToCheck] == null) {
@@ -40,6 +39,16 @@ module.exports = function (name, version) {
 
 			if (pkgInfo.homepage !== undefined) {
 				homepage = pkgInfo.homepage;
+
+				var repoURL = homepage.substr(0, homepage.lastIndexOf('/')) + '/' + name;
+				var guessedLicenseURL = repoURL + '/tree/' + pkgInfo.gitHead + '/LICENSE';
+				licenseURL = await got(guessedLicenseURL)
+					.then(function (data) {
+						return guessedLicenseURL;
+					})
+					.catch(function (err) {
+						return '';
+					});
 			}
 
 			if (pkgInfo.author !== undefined) {
@@ -65,6 +74,7 @@ module.exports = function (name, version) {
 				versionDate: versionDate,
 				description: description,
 				license: license,
+				licenseURL: licenseURL,
 				homepage: homepage,
 				author: authorName
 			};
