@@ -1,38 +1,43 @@
-'use strict';
-var got = require('got');
-var registryUrl = require('registry-url');
-var Promise = require('pinkie-promise');
+"use strict";
+var got = require("got");
+var registryUrl = require("registry-url");
+var Promise = require("pinkie-promise");
 
-module.exports = function (name, version) {
-	if (typeof name !== 'string') {
-		return Promise.reject(new Error('package name required'));
+module.exports = function(name, version) {
+	if (typeof name !== "string") {
+		return Promise.reject(new Error("package name required"));
 	}
 
-	return got(registryUrl + name.toLowerCase())
-		.then(async function (data) {
-			var versionName = '';
-			var versionDate = '';
-			var versionToCheck = '';
-			var latestVersion = '';
-			var latestDate = '';
-			var description = '';
-			var license = '';
-			var licenseURL = '';
-			var homepage = '';
-			var authorName = '';
+	var escapedName = name.toLowerCase().replace("/", "%2f");
+	var pkgNPMRegURL = registryUrl + escapedName;
+
+	return got(pkgNPMRegURL)
+		.then(async function(data) {
+			var versionName = "";
+			var versionDate = "";
+			var versionToCheck = "";
+			var latestVersion = "";
+			var latestDate = "";
+			var description = "";
+			var license = "";
+			var licenseURL = "";
+			var homepage = "";
+			var authorName = "";
 
 			var dataParsed = JSON.parse(data.body);
-			latestVersion = dataParsed['dist-tags'].latest;
+			latestVersion = dataParsed["dist-tags"].latest;
 			versionToCheck = version || latestVersion;
 
 			if (dataParsed.versions[versionToCheck] == null) {
-				throw new Error('Version \'' + versionToCheck + '\' for \'' + name + '\' doesn\'t exist');
+				throw new Error(
+					"Version '" + versionToCheck + "' for '" + name + "' doesn't exist"
+				);
 			}
 
 			var pkgInfo = dataParsed.versions[versionToCheck];
 
 			versionName = pkgInfo.name;
-			description = pkgInfo.description;
+			description = '"' + pkgInfo.description + '"';
 			license = pkgInfo.license;
 			latestDate = dataParsed.time[latestVersion];
 			versionDate = dataParsed.time[versionToCheck];
@@ -40,14 +45,23 @@ module.exports = function (name, version) {
 			if (pkgInfo.homepage !== undefined) {
 				homepage = pkgInfo.homepage;
 
-				var repoURL = homepage.substr(0, homepage.lastIndexOf('/')) + '/' + name;
-				var guessedLicenseURL = repoURL + '/tree/' + pkgInfo.gitHead + '/LICENSE';
+				var repoURL =
+					homepage.substr(0, homepage.lastIndexOf("/")) + "/" + name;
+				var guessedLicenseURL =
+					repoURL + "/tree/" + pkgInfo.gitHead + "/LICENSE";
+
 				licenseURL = await got(guessedLicenseURL)
-					.then(function (data) {
+					.then(function(data) {
 						return guessedLicenseURL;
 					})
-					.catch(function (err) {
-						return '';
+					.catch(async function(err) {
+						return await got(guessedLicenseURL + ".md")
+							.then(function(data) {
+								return guessedLicenseURL;
+							})
+							.catch(function(err) {
+								return "";
+							});
 					});
 			}
 
@@ -57,10 +71,10 @@ module.exports = function (name, version) {
 				if (pkgInfo.maintainers !== undefined) {
 					for (var i in pkgInfo.maintainers) {
 						var maintainer = pkgInfo.maintainers[i];
-						if (authorName === '') {
+						if (authorName === "") {
 							authorName = maintainer.name;
 						} else {
-							authorName = authorName + ', ' + maintainer.name;
+							authorName = authorName + ", " + maintainer.name;
 						}
 					}
 				}
@@ -79,9 +93,9 @@ module.exports = function (name, version) {
 				author: authorName
 			};
 		})
-		.catch(function (err) {
+		.catch(function(err) {
 			if (err.statusCode === 404) {
-				err.message = name + ' Package doesn\'t exist';
+				err.message = name + " Package doesn't exist";
 			}
 
 			throw err;
