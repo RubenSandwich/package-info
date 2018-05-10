@@ -4,6 +4,67 @@ var registryUrl = require("registry-url");
 var Promise = require("pinkie-promise");
 
 module.exports = function(name, version) {
+	function guessLicenseURLs(pkgInfo, versionToCheck) {
+		var repoURLs = [];
+		var guessLicenseURLEndings = ["/LICENSE", "/LICENSE.md"];
+
+		if (pkgInfo.homepage != null) {
+			var repoURL = pkgInfo.homepage;
+			repoURL = repoURL.replace(/.git$/, "");
+
+			repoURLs.push(repoURL);
+		}
+
+		if (pkgInfo.repository != null && pkgInfo.repository.url != null) {
+			var repoURL = pkgInfo.repository.url;
+			repoURL = repoURL.replace(/.git$/, "");
+
+			repoURLs.push(repoURL);
+		}
+
+		return repoURLs
+			.map(function(x) {
+				// Create guess URLs
+				var repoURL = x.replace(/(git)(\+)?(ssh|https|http)/gm, "https");
+				repoURL = repoURL.replace(/(git@)/gm, "") + "/tree/";
+
+				return guessLicenseURLEndings
+					.map(function(x) {
+						// build guess combinations
+						return [
+							{
+								treeLoc: versionToCheck,
+								guessLicenseURLEndings: x
+							},
+							{
+								treeLoc: "v" + versionToCheck,
+								guessLicenseURLEndings: x
+							}
+						];
+					})
+					.reduce(function(prev, curr) {
+						// Flatten array
+						return prev.concat(curr);
+					}, [])
+					.map(function(x) {
+						// Create guess urls
+						return repoURL + x.treeLoc + x.guessLicenseURLEndings;
+					});
+			})
+			.reduce(function(prev, curr) {
+				// Flatten array
+				return prev.concat(curr);
+			}, [])
+			.filter(function(x) {
+				// Remove any without the domain of github.com
+				return x.includes("github.com");
+			})
+			.filter(function(x, i, arr) {
+				// Remove duplicates
+				return arr.indexOf(x) == i;
+			});
+	}
+
 	if (typeof name !== "string") {
 		return Promise.reject(new Error("package name required"));
 	}
@@ -42,28 +103,32 @@ module.exports = function(name, version) {
 			latestDate = dataParsed.time[latestVersion];
 			versionDate = dataParsed.time[versionToCheck];
 
-			if (pkgInfo.homepage !== undefined) {
-				homepage = pkgInfo.homepage;
+			var guessedLicenseURLs = guessLicenseURLs(pkgInfo, versionToCheck);
 
-				var repoURL =
-					homepage.substr(0, homepage.lastIndexOf("/")) + "/" + name;
-				var guessedLicenseURL =
-					repoURL + "/tree/" + pkgInfo.gitHead + "/LICENSE";
-
-				licenseURL = await got(guessedLicenseURL)
-					.then(function(data) {
-						return guessedLicenseURL;
-					})
-					.catch(async function(err) {
-						return await got(guessedLicenseURL + ".md")
-							.then(function(data) {
-								return guessedLicenseURL;
-							})
-							.catch(function(err) {
-								return "";
-							});
+			licenseURL = await Promise.all(
+				guessedLicenseURLs.map(async function(guessedLicenseURL) {
+					try {
+						const found = await got(guessedLicenseURL);
+						if (found) {
+							return guessedLicenseURL;
+						}
+					} catch (e) {
+						return;
+					}
+				})
+			)
+				.then(function(guessedLicenseURLs) {
+					var licenseURLs = guessedLicenseURLs.filter(function(
+						guessedLicenseURL
+					) {
+						return guessedLicenseURL != null;
 					});
-			}
+
+					return licenseURLs.length === 0 ? "" : licenseURLs[0];
+				})
+				.catch(function(x) {
+					return "";
+				});
 
 			if (pkgInfo.author !== undefined) {
 				authorName = pkgInfo.author.name;
